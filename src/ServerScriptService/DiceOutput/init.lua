@@ -7,7 +7,9 @@
 local Output = {}
 Output.Enabled = true
 Output.PlaceId = game.PlaceId -- or an ID of a specific place. this is to make grabbing the place ID easier than a game ID
+Output.Timeout = 3
 Output.Logs = {}
+Output.Cache = {}
 Output.Connections = {}
 Output.Filter = {
 	['Server'] = '[SERVER]: ';
@@ -36,7 +38,34 @@ local rFunc = Network.rFunc
 local rEvent = Network.rEvent
 
 --// functions
-local function CreateMessage(message,enum,extra)
+local function LoadHistory()
+	coroutine.wrap(function()
+		if Services['RunService']:IsServer() then
+			for index,contents in pairs(Services['LogService']:GetLogHistory()) do
+				rEvent:FireAllClients(contents['message'],contents['messageType'])
+			end
+		elseif Services['RunService']:IsClient() then
+			for index,contents in pairs(Services['LogService']:GetLogHistory()) do
+				Output.CreateMessage(contents['message'],contents['messageType'],'Client')
+			end
+		end
+	end)()
+end
+
+function Output.FilterMessage(message)
+	if table.find(Output.Cache,string.lower(message)) then return false end
+	if string.find(string.lower(message), "failed to load") then return false end
+	if string.find(string.lower(message), "unable to download") then return false end
+	table.insert(Output.Cache,string.lower(message))
+	coroutine.wrap(function()
+		wait(Output.Timeout)
+		table.remove(Output.Cache,table.find(Output.Cache,string.lower(message)))
+	end)()
+	return true
+end
+
+function Output.CreateMessage(message,enum,extra)
+	if not Output.FilterMessage(message) then return end
 	if Services['RunService']:IsStudio() then
 		if Output.Enums[enum] then
 			Output:PostChat(Output.Filter['Studio']..message,enum)
@@ -52,6 +81,7 @@ function Output.Hook(func) -- returns dictionary to create text
 	if typeof(func) == 'function' then
 		table.insert(Output.Connections,func)
 	end
+	repeat Services['RunService'].Heartbeat:Wait() until #Output.Logs > 1
 	for index,contents in pairs(Output.Logs) do
 		func(contents)
 		Services['RunService'].Heartbeat:Wait()
@@ -80,27 +110,22 @@ function Output:PostChat(message,enum)
 	end
 end
 
+LoadHistory()
 if Services['RunService']:IsServer() then
 	-- SERVER OUTPUT
 	Services['LogService'].MessageOut:Connect(function(message,enum)
 		if Output.Enums[enum] and not Services['RunService']:IsStudio() then
-			-- filters
-			if string.find(string.lower(message), "failed to load") then return end
-			-- post
 			rEvent:FireAllClients(message,enum)
 		end
 	end)
 elseif Services['RunService']:IsClient() then
 	-- CLIENT REMOTE EVENT
 	rEvent.OnClientEvent:Connect(function(message,enum)
-		CreateMessage(message,enum,'Server')
+		Output.CreateMessage(message,enum,'Server')
 	end)
 	-- CLIENT OUTPUT
 	Services['LogService'].MessageOut:Connect(function(message,enum)
-		-- filters
-		if string.find(string.lower(message), "failed to load") then return end
-		-- post
-		CreateMessage(message,enum,'Client')
+		Output.CreateMessage(message,enum,'Client')
 	end)
 end
 
