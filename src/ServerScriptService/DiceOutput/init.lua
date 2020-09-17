@@ -7,7 +7,7 @@
 local Output = {}
 Output.Enabled = true
 Output.PlaceId = game.PlaceId -- or an ID of a specific place. this is to make grabbing the place ID easier than a game ID
-Output.Timeout = 3
+Output.Timeout = 5
 Output.Logs = {}
 Output.Cache = {}
 Output.Connections = {}
